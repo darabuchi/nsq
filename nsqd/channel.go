@@ -547,6 +547,21 @@ func (c *Channel) addToDeferredPQ(item *pqueue.Item) {
 	c.deferredMutex.Unlock()
 }
 
+func (c *Channel) ReadMessage() *Message {
+	for {
+		select {
+		case body := <-c.memoryMsgChan:
+			return body
+		case body := <-c.backend.ReadChan():
+			msg, err := decodeMessage(body)
+			if err != nil {
+				continue
+			}
+			return msg
+		}
+	}
+}
+
 func (c *Channel) processDeferredQueue(t int64) bool {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
