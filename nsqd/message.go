@@ -64,6 +64,11 @@ func (m *Message) WriteTo(w io.Writer) (int64, error) {
 	return total, nil
 }
 
+func (m *Message) SetDeferred(deferred time.Duration) *Message {
+	m.deferred = deferred
+	return m
+}
+
 // decodeMessage deserializes data (as []byte) and creates a new Message
 // message format:
 // [x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x][x]...
