@@ -756,3 +756,14 @@ func (n *NSQD) IsAuthEnabled() bool {
 func (n *NSQD) Context() context.Context {
 	return n.ctx
 }
+
+func (n *NSQD) CloneTopic() map[string]*Topic {
+	topicMap := map[string]*Topic{}
+	n.RLock()
+	for k, v := range n.topicMap {
+		topicMap[k] = v
+	}
+	n.RUnlock()
+
+	return topicMap
+}
