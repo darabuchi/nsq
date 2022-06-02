@@ -9,9 +9,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
+	
 	"github.com/nsqio/go-diskqueue"
-
+	
 	"github.com/nsqio/nsq/internal/lg"
 	"github.com/nsqio/nsq/internal/pqueue"
 	"github.com/nsqio/nsq/internal/quantile"
@@ -39,29 +39,29 @@ type Channel struct {
 	requeueCount uint64
 	messageCount uint64
 	timeoutCount uint64
-
+	
 	sync.RWMutex
-
+	
 	topicName string
 	name      string
 	nsqd      *NSQD
-
+	
 	backend BackendQueue
-
+	
 	memoryMsgChan chan *Message
 	exitFlag      int32
 	exitMutex     sync.RWMutex
-
+	
 	// state tracking
 	clients        map[int64]Consumer
 	paused         int32
 	ephemeral      bool
 	deleteCallback func(*Channel)
 	deleter        sync.Once
-
+	
 	// Stats tracking
 	e2eProcessingLatencyStream *quantile.Quantile
-
+	
 	// TODO: these can be DRYd up
 	deferredMessages map[MessageID]*pqueue.Item
 	deferredPQ       pqueue.PriorityQueue
@@ -73,8 +73,8 @@ type Channel struct {
 
 // NewChannel creates a new instance of the Channel type and returns a pointer
 func NewChannel(topicName string, channelName string, nsqd *NSQD,
-	deleteCallback func(*Channel)) *Channel {
-
+		deleteCallback func(*Channel)) *Channel {
+	
 	c := &Channel{
 		topicName:      topicName,
 		name:           channelName,
@@ -93,9 +93,9 @@ func NewChannel(topicName string, channelName string, nsqd *NSQD,
 			nsqd.getOpts().E2EProcessingLatencyPercentiles,
 		)
 	}
-
+	
 	c.initPQ()
-
+	
 	if strings.HasSuffix(channelName, "#ephemeral") {
 		c.ephemeral = true
 		c.backend = newDummyBackendQueue()
@@ -117,20 +117,20 @@ func NewChannel(topicName string, channelName string, nsqd *NSQD,
 			dqLogf,
 		)
 	}
-
+	
 	c.nsqd.Notify(c, !c.ephemeral)
-
+	
 	return c
 }
 
 func (c *Channel) initPQ() {
 	pqSize := int(math.Max(1, float64(c.nsqd.getOpts().MemQueueSize)/10))
-
+	
 	c.inFlightMutex.Lock()
 	c.inFlightMessages = make(map[MessageID]*Message)
 	c.inFlightPQ = newInFlightPqueue(pqSize)
 	c.inFlightMutex.Unlock()
-
+	
 	c.deferredMutex.Lock()
 	c.deferredMessages = make(map[MessageID]*pqueue.Item)
 	c.deferredPQ = pqueue.New(pqSize)
@@ -155,34 +155,34 @@ func (c *Channel) Close() error {
 func (c *Channel) exit(deleted bool) error {
 	c.exitMutex.Lock()
 	defer c.exitMutex.Unlock()
-
+	
 	if !atomic.CompareAndSwapInt32(&c.exitFlag, 0, 1) {
 		return errors.New("exiting")
 	}
-
+	
 	if deleted {
 		c.nsqd.logf(LOG_INFO, "CHANNEL(%s): deleting", c.name)
-
+		
 		// since we are explicitly deleting a channel (not just at system exit time)
 		// de-register this from the lookupd
 		c.nsqd.Notify(c, !c.ephemeral)
 	} else {
 		c.nsqd.logf(LOG_INFO, "CHANNEL(%s): closing", c.name)
 	}
-
+	
 	// this forceably closes client connections
 	c.RLock()
 	for _, client := range c.clients {
 		client.Close()
 	}
 	c.RUnlock()
-
+	
 	if deleted {
 		// empty the queue (deletes the backend files, too)
 		c.Empty()
 		return c.backend.Delete()
 	}
-
+	
 	// write anything leftover to disk
 	c.flush()
 	return c.backend.Close()
@@ -191,12 +191,12 @@ func (c *Channel) exit(deleted bool) error {
 func (c *Channel) Empty() error {
 	c.Lock()
 	defer c.Unlock()
-
+	
 	c.initPQ()
 	for _, client := range c.clients {
 		client.Empty()
 	}
-
+	
 	for {
 		select {
 		case <-c.memoryMsgChan:
@@ -216,7 +216,7 @@ func (c *Channel) flush() error {
 		c.nsqd.logf(LOG_INFO, "CHANNEL(%s): flushing %d memory %d in-flight %d deferred messages to backend",
 			c.name, len(c.memoryMsgChan), len(c.inFlightMessages), len(c.deferredMessages))
 	}
-
+	
 	for {
 		select {
 		case msg := <-c.memoryMsgChan:
@@ -238,7 +238,7 @@ finish:
 		}
 	}
 	c.inFlightMutex.Unlock()
-
+	
 	c.deferredMutex.Lock()
 	for _, item := range c.deferredMessages {
 		msg := item.Value.(*Message)
@@ -248,12 +248,25 @@ finish:
 		}
 	}
 	c.deferredMutex.Unlock()
-
+	
 	return nil
 }
 
 func (c *Channel) Depth() int64 {
 	return int64(len(c.memoryMsgChan)) + c.backend.Depth()
+}
+
+func (c *Channel) InFlightDepth() int64 {
+	c.inFlightMutex.Lock()
+	defer c.inFlightMutex.Unlock()
+	
+	return int64(len(c.inFlightMessages))
+}
+
+func (c *Channel) DeferredDepth() int64 {
+	c.deferredMutex.Lock()
+	defer c.deferredMutex.Unlock()
+	return int64(len(c.deferredMessages))
 }
 
 func (c *Channel) Pause() error {
@@ -270,7 +283,7 @@ func (c *Channel) doPause(pause bool) error {
 	} else {
 		atomic.StoreInt32(&c.paused, 0)
 	}
-
+	
 	c.RLock()
 	for _, client := range c.clients {
 		if pause {
@@ -329,14 +342,14 @@ func (c *Channel) TouchMessage(clientID int64, id MessageID, clientMsgTimeout ti
 		return err
 	}
 	c.removeFromInFlightPQ(msg)
-
+	
 	newTimeout := time.Now().Add(clientMsgTimeout)
 	if newTimeout.Sub(msg.deliveryTS) >=
-		c.nsqd.getOpts().MaxMsgTimeout {
+			c.nsqd.getOpts().MaxMsgTimeout {
 		// we would have gone over, set to the max
 		newTimeout = msg.deliveryTS.Add(c.nsqd.getOpts().MaxMsgTimeout)
 	}
-
+	
 	msg.pri = newTimeout.UnixNano()
 	err = c.pushInFlightMessage(msg)
 	if err != nil {
@@ -373,7 +386,7 @@ func (c *Channel) RequeueMessage(clientID int64, id MessageID, timeout time.Dura
 	}
 	c.removeFromInFlightPQ(msg)
 	atomic.AddUint64(&c.requeueCount, 1)
-
+	
 	if timeout == 0 {
 		c.exitMutex.RLock()
 		if c.Exiting() {
@@ -384,7 +397,7 @@ func (c *Channel) RequeueMessage(clientID int64, id MessageID, timeout time.Dura
 		c.exitMutex.RUnlock()
 		return err
 	}
-
+	
 	// deferred requeue
 	return c.StartDeferredTimeout(msg, timeout)
 }
@@ -393,11 +406,11 @@ func (c *Channel) RequeueMessage(clientID int64, id MessageID, timeout time.Dura
 func (c *Channel) AddClient(clientID int64, client Consumer) error {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
-
+	
 	if c.Exiting() {
 		return errors.New("exiting")
 	}
-
+	
 	c.RLock()
 	_, ok := c.clients[clientID]
 	numClients := len(c.clients)
@@ -405,13 +418,13 @@ func (c *Channel) AddClient(clientID int64, client Consumer) error {
 	if ok {
 		return nil
 	}
-
+	
 	maxChannelConsumers := c.nsqd.getOpts().MaxChannelConsumers
 	if maxChannelConsumers != 0 && numClients >= maxChannelConsumers {
 		return fmt.Errorf("consumers for %s:%s exceeds limit of %d",
 			c.topicName, c.name, maxChannelConsumers)
 	}
-
+	
 	c.Lock()
 	c.clients[clientID] = client
 	c.Unlock()
@@ -422,22 +435,22 @@ func (c *Channel) AddClient(clientID int64, client Consumer) error {
 func (c *Channel) RemoveClient(clientID int64) {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
-
+	
 	if c.Exiting() {
 		return
 	}
-
+	
 	c.RLock()
 	_, ok := c.clients[clientID]
 	c.RUnlock()
 	if !ok {
 		return
 	}
-
+	
 	c.Lock()
 	delete(c.clients, clientID)
 	c.Unlock()
-
+	
 	if len(c.clients) == 0 && c.ephemeral == true {
 		go c.deleter.Do(func() { c.deleteCallback(c) })
 	}
@@ -565,22 +578,22 @@ func (c *Channel) ReadMessage() *Message {
 func (c *Channel) processDeferredQueue(t int64) bool {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
-
+	
 	if c.Exiting() {
 		return false
 	}
-
+	
 	dirty := false
 	for {
 		c.deferredMutex.Lock()
 		item, _ := c.deferredPQ.PeekAndShift(t)
 		c.deferredMutex.Unlock()
-
+		
 		if item == nil {
 			goto exit
 		}
 		dirty = true
-
+		
 		msg := item.Value.(*Message)
 		_, err := c.popDeferredMessage(msg.ID)
 		if err != nil {
@@ -596,22 +609,22 @@ exit:
 func (c *Channel) processInFlightQueue(t int64) bool {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
-
+	
 	if c.Exiting() {
 		return false
 	}
-
+	
 	dirty := false
 	for {
 		c.inFlightMutex.Lock()
 		msg, _ := c.inFlightPQ.PeekAndShift(t)
 		c.inFlightMutex.Unlock()
-
+		
 		if msg == nil {
 			goto exit
 		}
 		dirty = true
-
+		
 		_, err := c.popInFlightMessage(msg.clientID, msg.ID)
 		if err != nil {
 			goto exit
