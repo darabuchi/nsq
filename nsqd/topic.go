@@ -87,6 +87,10 @@ func NewTopic(topicName string, nsqd *NSQD, deleteCallback func(*Topic)) *Topic 
 	return t
 }
 
+func (t *Topic) Name() string {
+	return t.name
+}
+
 func (t *Topic) Start() {
 	select {
 	case t.startChan <- 1:
