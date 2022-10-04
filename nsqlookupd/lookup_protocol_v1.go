@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-
+	
 	"github.com/nsqio/nsq/internal/protocol"
 	"github.com/nsqio/nsq/internal/version"
 )
@@ -28,19 +28,19 @@ func (p *LookupProtocolV1) NewClient(conn net.Conn) protocol.Client {
 func (p *LookupProtocolV1) IOLoop(c protocol.Client) error {
 	var err error
 	var line string
-
+	
 	client := c.(*ClientV1)
-
+	
 	reader := bufio.NewReader(client)
 	for {
 		line, err = reader.ReadString('\n')
 		if err != nil {
 			break
 		}
-
+		
 		line = strings.TrimSpace(line)
 		params := strings.Split(line, " ")
-
+		
 		var response []byte
 		response, err = p.Exec(client, reader, params)
 		if err != nil {
@@ -49,20 +49,20 @@ func (p *LookupProtocolV1) IOLoop(c protocol.Client) error {
 				ctx = " - " + parentErr.Error()
 			}
 			p.nsqlookupd.logf(LOG_ERROR, "[%s] - %s%s", client, err, ctx)
-
+			
 			_, sendErr := protocol.SendResponse(client, []byte(err.Error()))
 			if sendErr != nil {
 				p.nsqlookupd.logf(LOG_ERROR, "[%s] - %s%s", client, sendErr, ctx)
 				break
 			}
-
+			
 			// errors of type FatalClientErr should forceably close the connection
 			if _, ok := err.(*protocol.FatalClientErr); ok {
 				break
 			}
 			continue
 		}
-
+		
 		if response != nil {
 			_, err = protocol.SendResponse(client, response)
 			if err != nil {
@@ -70,9 +70,9 @@ func (p *LookupProtocolV1) IOLoop(c protocol.Client) error {
 			}
 		}
 	}
-
+	
 	p.nsqlookupd.logf(LOG_INFO, "PROTOCOL(V1): [%s] exiting ioloop", client)
-
+	
 	if client.peerInfo != nil {
 		registrations := p.nsqlookupd.DB.LookupRegistrations(client.peerInfo.id)
 		for _, r := range registrations {
@@ -82,7 +82,7 @@ func (p *LookupProtocolV1) IOLoop(c protocol.Client) error {
 			}
 		}
 	}
-
+	
 	return err
 }
 
@@ -104,21 +104,21 @@ func getTopicChan(command string, params []string) (string, string, error) {
 	if len(params) == 0 {
 		return "", "", protocol.NewFatalClientErr(nil, "E_INVALID", fmt.Sprintf("%s insufficient number of params", command))
 	}
-
+	
 	topicName := params[0]
 	var channelName string
 	if len(params) >= 2 {
 		channelName = params[1]
 	}
-
+	
 	if !protocol.IsValidTopicName(topicName) {
 		return "", "", protocol.NewFatalClientErr(nil, "E_BAD_TOPIC", fmt.Sprintf("%s topic name '%s' is not valid", command, topicName))
 	}
-
+	
 	if channelName != "" && !protocol.IsValidChannelName(channelName) {
 		return "", "", protocol.NewFatalClientErr(nil, "E_BAD_CHANNEL", fmt.Sprintf("%s channel name '%s' is not valid", command, channelName))
 	}
-
+	
 	return topicName, channelName, nil
 }
 
@@ -126,12 +126,12 @@ func (p *LookupProtocolV1) REGISTER(client *ClientV1, reader *bufio.Reader, para
 	if client.peerInfo == nil {
 		return nil, protocol.NewFatalClientErr(nil, "E_INVALID", "client must IDENTIFY")
 	}
-
+	
 	topic, channel, err := getTopicChan("REGISTER", params)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	if channel != "" {
 		key := Registration{"channel", topic, channel}
 		if p.nsqlookupd.DB.AddProducer(key, &Producer{peerInfo: client.peerInfo}) {
@@ -144,7 +144,7 @@ func (p *LookupProtocolV1) REGISTER(client *ClientV1, reader *bufio.Reader, para
 		p.nsqlookupd.logf(LOG_INFO, "DB: client(%s) REGISTER category:%s key:%s subkey:%s",
 			client, "topic", topic, "")
 	}
-
+	
 	return []byte("OK"), nil
 }
 
@@ -152,12 +152,12 @@ func (p *LookupProtocolV1) UNREGISTER(client *ClientV1, reader *bufio.Reader, pa
 	if client.peerInfo == nil {
 		return nil, protocol.NewFatalClientErr(nil, "E_INVALID", "client must IDENTIFY")
 	}
-
+	
 	topic, channel, err := getTopicChan("UNREGISTER", params)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	if channel != "" {
 		key := Registration{"channel", topic, channel}
 		removed, left := p.nsqlookupd.DB.RemoveProducer(key, client.peerInfo.id)
@@ -182,7 +182,7 @@ func (p *LookupProtocolV1) UNREGISTER(client *ClientV1, reader *bufio.Reader, pa
 					client, "channel", topic, r.SubKey)
 			}
 		}
-
+		
 		key := Registration{"topic", topic, ""}
 		removed, left := p.nsqlookupd.DB.RemoveProducer(key, client.peerInfo.id)
 		if removed {
@@ -193,53 +193,53 @@ func (p *LookupProtocolV1) UNREGISTER(client *ClientV1, reader *bufio.Reader, pa
 			p.nsqlookupd.DB.RemoveRegistration(key)
 		}
 	}
-
+	
 	return []byte("OK"), nil
 }
 
 func (p *LookupProtocolV1) IDENTIFY(client *ClientV1, reader *bufio.Reader, params []string) ([]byte, error) {
 	var err error
-
+	
 	if client.peerInfo != nil {
 		return nil, protocol.NewFatalClientErr(err, "E_INVALID", "cannot IDENTIFY again")
 	}
-
+	
 	var bodyLen int32
 	err = binary.Read(reader, binary.BigEndian, &bodyLen)
 	if err != nil {
 		return nil, protocol.NewFatalClientErr(err, "E_BAD_BODY", "IDENTIFY failed to read body size")
 	}
-
+	
 	body := make([]byte, bodyLen)
 	_, err = io.ReadFull(reader, body)
 	if err != nil {
 		return nil, protocol.NewFatalClientErr(err, "E_BAD_BODY", "IDENTIFY failed to read body")
 	}
-
+	
 	// body is a json structure with producer information
 	peerInfo := PeerInfo{id: client.RemoteAddr().String()}
-	err = json.Unmarshal(body, &peerInfo)
+	err = sonic.Unmarshal(body, &peerInfo)
 	if err != nil {
 		return nil, protocol.NewFatalClientErr(err, "E_BAD_BODY", "IDENTIFY failed to decode JSON body")
 	}
-
+	
 	peerInfo.RemoteAddress = client.RemoteAddr().String()
-
+	
 	// require all fields
 	if peerInfo.BroadcastAddress == "" || peerInfo.TCPPort == 0 || peerInfo.HTTPPort == 0 || peerInfo.Version == "" {
 		return nil, protocol.NewFatalClientErr(nil, "E_BAD_BODY", "IDENTIFY missing fields")
 	}
-
+	
 	atomic.StoreInt64(&peerInfo.lastUpdate, time.Now().UnixNano())
-
+	
 	p.nsqlookupd.logf(LOG_INFO, "CLIENT(%s): IDENTIFY Address:%s TCP:%d HTTP:%d Version:%s",
 		client, peerInfo.BroadcastAddress, peerInfo.TCPPort, peerInfo.HTTPPort, peerInfo.Version)
-
+	
 	client.peerInfo = &peerInfo
 	if p.nsqlookupd.DB.AddProducer(Registration{"client", "", ""}, &Producer{peerInfo: client.peerInfo}) {
 		p.nsqlookupd.logf(LOG_INFO, "DB: client(%s) REGISTER category:%s key:%s subkey:%s", client, "client", "", "")
 	}
-
+	
 	// build a response
 	data := make(map[string]interface{})
 	data["tcp_port"] = p.nsqlookupd.RealTCPAddr().Port
@@ -251,7 +251,7 @@ func (p *LookupProtocolV1) IDENTIFY(client *ClientV1, reader *bufio.Reader, para
 	}
 	data["broadcast_address"] = p.nsqlookupd.opts.BroadcastAddress
 	data["hostname"] = hostname
-
+	
 	response, err := json.Marshal(data)
 	if err != nil {
 		p.nsqlookupd.logf(LOG_ERROR, "marshaling %v", data)

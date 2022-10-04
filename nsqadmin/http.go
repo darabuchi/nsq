@@ -15,7 +15,7 @@ import (
 	"reflect"
 	"strings"
 	"time"
-
+	
 	"github.com/julienschmidt/httprouter"
 	"github.com/nsqio/nsq/internal/clusterinfo"
 	"github.com/nsqio/nsq/internal/http_api"
@@ -58,33 +58,33 @@ type httpServer struct {
 
 func NewHTTPServer(nsqadmin *NSQAdmin) *httpServer {
 	log := http_api.Log(nsqadmin.logf)
-
+	
 	client := http_api.NewClient(nsqadmin.httpClientTLSConfig, nsqadmin.getOpts().HTTPClientConnectTimeout,
 		nsqadmin.getOpts().HTTPClientRequestTimeout)
-
+	
 	router := httprouter.New()
 	router.HandleMethodNotAllowed = true
 	router.PanicHandler = http_api.LogPanicHandler(nsqadmin.logf)
 	router.NotFound = http_api.LogNotFoundHandler(nsqadmin.logf)
 	router.MethodNotAllowed = http_api.LogMethodNotAllowedHandler(nsqadmin.logf)
-
+	
 	s := &httpServer{
 		nsqadmin: nsqadmin,
 		router:   router,
 		client:   client,
 		ci:       clusterinfo.New(nsqadmin.logf, client),
-
+		
 		basePath:     nsqadmin.getOpts().BasePath,
 		devStaticDir: nsqadmin.getOpts().DevStaticDir,
 	}
-
+	
 	bp := func(p string) string {
 		return path.Join(s.basePath, p)
 	}
-
+	
 	router.Handle("GET", bp("/"), http_api.Decorate(s.indexHandler, log))
 	router.Handle("GET", bp("/ping"), http_api.Decorate(s.pingHandler, log, http_api.PlainText))
-
+	
 	router.Handle("GET", bp("/topics"), http_api.Decorate(s.indexHandler, log))
 	router.Handle("GET", bp("/topics/:topic"), http_api.Decorate(s.indexHandler, log))
 	router.Handle("GET", bp("/topics/:topic/:channel"), http_api.Decorate(s.indexHandler, log))
@@ -92,7 +92,7 @@ func NewHTTPServer(nsqadmin *NSQAdmin) *httpServer {
 	router.Handle("GET", bp("/nodes/:node"), http_api.Decorate(s.indexHandler, log))
 	router.Handle("GET", bp("/counter"), http_api.Decorate(s.indexHandler, log))
 	router.Handle("GET", bp("/lookup"), http_api.Decorate(s.indexHandler, log))
-
+	
 	router.Handle("GET", bp("/static/:asset"), http_api.Decorate(s.staticAssetHandler, log, http_api.PlainText))
 	router.Handle("GET", bp("/fonts/:asset"), http_api.Decorate(s.staticAssetHandler, log, http_api.PlainText))
 	if s.nsqadmin.getOpts().ProxyGraphite {
@@ -100,7 +100,7 @@ func NewHTTPServer(nsqadmin *NSQAdmin) *httpServer {
 			nsqadmin.getOpts().HTTPClientRequestTimeout)
 		router.Handler("GET", bp("/render"), proxy)
 	}
-
+	
 	// v1 endpoints
 	router.Handle("GET", bp("/api/topics"), http_api.Decorate(s.topicsHandler, log, http_api.V1))
 	router.Handle("GET", bp("/api/topics/:topic"), http_api.Decorate(s.topicHandler, log, http_api.V1))
@@ -117,7 +117,7 @@ func NewHTTPServer(nsqadmin *NSQAdmin) *httpServer {
 	router.Handle("GET", bp("/api/graphite"), http_api.Decorate(s.graphiteHandler, log, http_api.V1))
 	router.Handle("GET", bp("/config/:opt"), http_api.Decorate(s.doConfig, log, http_api.V1))
 	router.Handle("PUT", bp("/config/:opt"), http_api.Decorate(s.doConfig, log, http_api.V1))
-
+	
 	return s
 }
 
@@ -136,7 +136,7 @@ func (s *httpServer) indexHandler(w http.ResponseWriter, req *http.Request, ps h
 			return path.Join(s.basePath, p)
 		},
 	}).Parse(string(asset))
-
+	
 	w.Header().Set("Content-Type", "text/html")
 	t.Execute(w, struct {
 		Version             string
@@ -161,13 +161,13 @@ func (s *httpServer) indexHandler(w http.ResponseWriter, req *http.Request, ps h
 		NSQLookupd:          s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 		IsAdmin:             s.isAuthorizedAdminRequest(req),
 	})
-
+	
 	return nil, nil
 }
 
 func (s *httpServer) staticAssetHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	assetName := ps.ByName("asset")
-
+	
 	var (
 		asset []byte
 		err   error
@@ -182,7 +182,7 @@ func (s *httpServer) staticAssetHandler(w http.ResponseWriter, req *http.Request
 	if err != nil {
 		return nil, http_api.Err{404, "NOT_FOUND"}
 	}
-
+	
 	ext := path.Ext(assetName)
 	ct := mime.TypeByExtension(ext)
 	if ct == "" {
@@ -204,18 +204,18 @@ func (s *httpServer) staticAssetHandler(w http.ResponseWriter, req *http.Request
 	if ct != "" {
 		w.Header().Set("Content-Type", ct)
 	}
-
+	
 	return string(asset), nil
 }
 
 func (s *httpServer) topicsHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	reqParams, err := http_api.NewReqParams(req)
 	if err != nil {
 		return nil, http_api.Err{400, err.Error()}
 	}
-
+	
 	var topics []string
 	if len(s.nsqadmin.getOpts().NSQLookupdHTTPAddresses) != 0 {
 		topics, err = s.ci.GetLookupdTopics(s.nsqadmin.getOpts().NSQLookupdHTTPAddresses)
@@ -231,7 +231,7 @@ func (s *httpServer) topicsHandler(w http.ResponseWriter, req *http.Request, ps 
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	inactive, _ := reqParams.Get("inactive")
 	if inactive == "true" {
 		topicChannelMap := make(map[string][]string)
@@ -253,7 +253,7 @@ func (s *httpServer) topicsHandler(w http.ResponseWriter, req *http.Request, ps 
 			Message string              `json:"message"`
 		}{topicChannelMap, maybeWarnMsg(messages)}, nil
 	}
-
+	
 	return struct {
 		Topics  []string `json:"topics"`
 		Message string   `json:"message"`
@@ -262,9 +262,9 @@ func (s *httpServer) topicsHandler(w http.ResponseWriter, req *http.Request, ps 
 
 func (s *httpServer) topicHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	topicName := ps.ByName("topic")
-
+	
 	producers, err := s.ci.GetTopicProducers(topicName,
 		s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 		s.nsqadmin.getOpts().NSQDHTTPAddresses)
@@ -287,12 +287,12 @@ func (s *httpServer) topicHandler(w http.ResponseWriter, req *http.Request, ps h
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	allNodesTopicStats := &clusterinfo.TopicStats{TopicName: topicName}
 	for _, t := range topicStats {
 		allNodesTopicStats.Add(t)
 	}
-
+	
 	return struct {
 		*clusterinfo.TopicStats
 		Message string `json:"message"`
@@ -301,10 +301,10 @@ func (s *httpServer) topicHandler(w http.ResponseWriter, req *http.Request, ps h
 
 func (s *httpServer) channelHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	topicName := ps.ByName("topic")
 	channelName := ps.ByName("channel")
-
+	
 	producers, err := s.ci.GetTopicProducers(topicName,
 		s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 		s.nsqadmin.getOpts().NSQDHTTPAddresses)
@@ -327,7 +327,7 @@ func (s *httpServer) channelHandler(w http.ResponseWriter, req *http.Request, ps
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	return struct {
 		*clusterinfo.ChannelStats
 		Message string `json:"message"`
@@ -336,7 +336,7 @@ func (s *httpServer) channelHandler(w http.ResponseWriter, req *http.Request, ps
 
 func (s *httpServer) nodesHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	producers, err := s.ci.GetProducers(s.nsqadmin.getOpts().NSQLookupdHTTPAddresses, s.nsqadmin.getOpts().NSQDHTTPAddresses)
 	if err != nil {
 		pe, ok := err.(clusterinfo.PartialErr)
@@ -347,7 +347,7 @@ func (s *httpServer) nodesHandler(w http.ResponseWriter, req *http.Request, ps h
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	return struct {
 		Nodes   clusterinfo.Producers `json:"nodes"`
 		Message string                `json:"message"`
@@ -356,9 +356,9 @@ func (s *httpServer) nodesHandler(w http.ResponseWriter, req *http.Request, ps h
 
 func (s *httpServer) nodeHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	node := ps.ByName("node")
-
+	
 	producers, err := s.ci.GetProducers(s.nsqadmin.getOpts().NSQLookupdHTTPAddresses, s.nsqadmin.getOpts().NSQDHTTPAddresses)
 	if err != nil {
 		pe, ok := err.(clusterinfo.PartialErr)
@@ -369,18 +369,18 @@ func (s *httpServer) nodeHandler(w http.ResponseWriter, req *http.Request, ps ht
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	producer := producers.Search(node)
 	if producer == nil {
 		return nil, http_api.Err{404, "NODE_NOT_FOUND"}
 	}
-
+	
 	topicStats, _, err := s.ci.GetNSQDStats(clusterinfo.Producers{producer}, "", "", true)
 	if err != nil {
 		s.nsqadmin.logf(LOG_ERROR, "failed to get nsqd stats - %s", err)
 		return nil, http_api.Err{502, fmt.Sprintf("UPSTREAM_ERROR: %s", err)}
 	}
-
+	
 	var totalClients int64
 	var totalMessages int64
 	for _, ts := range topicStats {
@@ -389,7 +389,7 @@ func (s *httpServer) nodeHandler(w http.ResponseWriter, req *http.Request, ps ht
 		}
 		totalMessages += ts.MessageCount
 	}
-
+	
 	return struct {
 		Node          string                    `json:"node"`
 		TopicStats    []*clusterinfo.TopicStats `json:"topics"`
@@ -407,9 +407,9 @@ func (s *httpServer) nodeHandler(w http.ResponseWriter, req *http.Request, ps ht
 
 func (s *httpServer) tombstoneNodeForTopicHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	node := ps.ByName("node")
-
+	
 	var body struct {
 		Topic string `json:"topic"`
 	}
@@ -417,11 +417,11 @@ func (s *httpServer) tombstoneNodeForTopicHandler(w http.ResponseWriter, req *ht
 	if err != nil {
 		return nil, http_api.Err{400, "INVALID_BODY"}
 	}
-
+	
 	if !protocol.IsValidTopicName(body.Topic) {
 		return nil, http_api.Err{400, "INVALID_TOPIC"}
 	}
-
+	
 	err = s.ci.TombstoneNodeForTopic(body.Topic, node,
 		s.nsqadmin.getOpts().NSQLookupdHTTPAddresses)
 	if err != nil {
@@ -433,9 +433,9 @@ func (s *httpServer) tombstoneNodeForTopicHandler(w http.ResponseWriter, req *ht
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	s.notifyAdminAction("tombstone_topic_producer", body.Topic, "", node, req)
-
+	
 	return struct {
 		Message string `json:"message"`
 	}{maybeWarnMsg(messages)}, nil
@@ -443,29 +443,29 @@ func (s *httpServer) tombstoneNodeForTopicHandler(w http.ResponseWriter, req *ht
 
 func (s *httpServer) createTopicChannelHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	var body struct {
 		Topic   string `json:"topic"`
 		Channel string `json:"channel"`
 	}
-
+	
 	if !s.isAuthorizedAdminRequest(req) {
 		return nil, http_api.Err{403, "FORBIDDEN"}
 	}
-
+	
 	err := json.NewDecoder(req.Body).Decode(&body)
 	if err != nil {
 		return nil, http_api.Err{400, err.Error()}
 	}
-
+	
 	if !protocol.IsValidTopicName(body.Topic) {
 		return nil, http_api.Err{400, "INVALID_TOPIC"}
 	}
-
+	
 	if len(body.Channel) > 0 && !protocol.IsValidChannelName(body.Channel) {
 		return nil, http_api.Err{400, "INVALID_CHANNEL"}
 	}
-
+	
 	err = s.ci.CreateTopicChannel(body.Topic, body.Channel,
 		s.nsqadmin.getOpts().NSQLookupdHTTPAddresses)
 	if err != nil {
@@ -477,12 +477,12 @@ func (s *httpServer) createTopicChannelHandler(w http.ResponseWriter, req *http.
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	s.notifyAdminAction("create_topic", body.Topic, "", "", req)
 	if len(body.Channel) > 0 {
 		s.notifyAdminAction("create_channel", body.Topic, body.Channel, "", req)
 	}
-
+	
 	return struct {
 		Message string `json:"message"`
 	}{maybeWarnMsg(messages)}, nil
@@ -490,13 +490,13 @@ func (s *httpServer) createTopicChannelHandler(w http.ResponseWriter, req *http.
 
 func (s *httpServer) deleteTopicHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	if !s.isAuthorizedAdminRequest(req) {
 		return nil, http_api.Err{403, "FORBIDDEN"}
 	}
-
+	
 	topicName := ps.ByName("topic")
-
+	
 	err := s.ci.DeleteTopic(topicName,
 		s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 		s.nsqadmin.getOpts().NSQDHTTPAddresses)
@@ -509,9 +509,9 @@ func (s *httpServer) deleteTopicHandler(w http.ResponseWriter, req *http.Request
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	s.notifyAdminAction("delete_topic", topicName, "", "", req)
-
+	
 	return struct {
 		Message string `json:"message"`
 	}{maybeWarnMsg(messages)}, nil
@@ -519,14 +519,14 @@ func (s *httpServer) deleteTopicHandler(w http.ResponseWriter, req *http.Request
 
 func (s *httpServer) deleteChannelHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
-
+	
 	if !s.isAuthorizedAdminRequest(req) {
 		return nil, http_api.Err{403, "FORBIDDEN"}
 	}
-
+	
 	topicName := ps.ByName("topic")
 	channelName := ps.ByName("channel")
-
+	
 	err := s.ci.DeleteChannel(topicName, channelName,
 		s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 		s.nsqadmin.getOpts().NSQDHTTPAddresses)
@@ -539,9 +539,9 @@ func (s *httpServer) deleteChannelHandler(w http.ResponseWriter, req *http.Reque
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	s.notifyAdminAction("delete_channel", topicName, channelName, "", req)
-
+	
 	return struct {
 		Message string `json:"message"`
 	}{maybeWarnMsg(messages)}, nil
@@ -560,33 +560,33 @@ func (s *httpServer) channelActionHandler(w http.ResponseWriter, req *http.Reque
 
 func (s *httpServer) topicChannelAction(req *http.Request, topicName string, channelName string) (interface{}, error) {
 	var messages []string
-
+	
 	var body struct {
 		Action string `json:"action"`
 	}
-
+	
 	if !s.isAuthorizedAdminRequest(req) {
 		return nil, http_api.Err{403, "FORBIDDEN"}
 	}
-
+	
 	err := json.NewDecoder(req.Body).Decode(&body)
 	if err != nil {
 		return nil, http_api.Err{400, err.Error()}
 	}
-
+	
 	switch body.Action {
 	case "pause":
 		if channelName != "" {
 			err = s.ci.PauseChannel(topicName, channelName,
 				s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 				s.nsqadmin.getOpts().NSQDHTTPAddresses)
-
+			
 			s.notifyAdminAction("pause_channel", topicName, channelName, "", req)
 		} else {
 			err = s.ci.PauseTopic(topicName,
 				s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 				s.nsqadmin.getOpts().NSQDHTTPAddresses)
-
+			
 			s.notifyAdminAction("pause_topic", topicName, "", "", req)
 		}
 	case "unpause":
@@ -594,13 +594,13 @@ func (s *httpServer) topicChannelAction(req *http.Request, topicName string, cha
 			err = s.ci.UnPauseChannel(topicName, channelName,
 				s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 				s.nsqadmin.getOpts().NSQDHTTPAddresses)
-
+			
 			s.notifyAdminAction("unpause_channel", topicName, channelName, "", req)
 		} else {
 			err = s.ci.UnPauseTopic(topicName,
 				s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 				s.nsqadmin.getOpts().NSQDHTTPAddresses)
-
+			
 			s.notifyAdminAction("unpause_topic", topicName, "", "", req)
 		}
 	case "empty":
@@ -608,19 +608,19 @@ func (s *httpServer) topicChannelAction(req *http.Request, topicName string, cha
 			err = s.ci.EmptyChannel(topicName, channelName,
 				s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 				s.nsqadmin.getOpts().NSQDHTTPAddresses)
-
+			
 			s.notifyAdminAction("empty_channel", topicName, channelName, "", req)
 		} else {
 			err = s.ci.EmptyTopic(topicName,
 				s.nsqadmin.getOpts().NSQLookupdHTTPAddresses,
 				s.nsqadmin.getOpts().NSQDHTTPAddresses)
-
+			
 			s.notifyAdminAction("empty_topic", topicName, "", "", req)
 		}
 	default:
 		return nil, http_api.Err{400, "INVALID_ACTION"}
 	}
-
+	
 	if err != nil {
 		pe, ok := err.(clusterinfo.PartialErr)
 		if !ok {
@@ -630,7 +630,7 @@ func (s *httpServer) topicChannelAction(req *http.Request, topicName string, cha
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	return struct {
 		Message string `json:"message"`
 	}{maybeWarnMsg(messages)}, nil
@@ -646,7 +646,7 @@ type counterStats struct {
 func (s *httpServer) counterHandler(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var messages []string
 	stats := make(map[string]*counterStats)
-
+	
 	producers, err := s.ci.GetProducers(s.nsqadmin.getOpts().NSQLookupdHTTPAddresses, s.nsqadmin.getOpts().NSQDHTTPAddresses)
 	if err != nil {
 		pe, ok := err.(clusterinfo.PartialErr)
@@ -667,7 +667,7 @@ func (s *httpServer) counterHandler(w http.ResponseWriter, req *http.Request, ps
 		s.nsqadmin.logf(LOG_WARN, "%s", err)
 		messages = append(messages, pe.Error())
 	}
-
+	
 	for _, channelStats := range channelStats {
 		for _, hostChannelStats := range channelStats.NodeStats {
 			key := fmt.Sprintf("%s:%s:%s", channelStats.TopicName, channelStats.ChannelName, hostChannelStats.Node)
@@ -683,7 +683,7 @@ func (s *httpServer) counterHandler(w http.ResponseWriter, req *http.Request, ps
 			s.MessageCount += hostChannelStats.MessageCount
 		}
 	}
-
+	
 	return struct {
 		Stats   map[string]*counterStats `json:"stats"`
 		Message string                   `json:"message"`
@@ -695,17 +695,17 @@ func (s *httpServer) graphiteHandler(w http.ResponseWriter, req *http.Request, p
 	if err != nil {
 		return nil, http_api.Err{400, "INVALID_REQUEST"}
 	}
-
+	
 	metric, err := reqParams.Get("metric")
 	if err != nil || metric != "rate" {
 		return nil, http_api.Err{400, "INVALID_ARG_METRIC"}
 	}
-
+	
 	target, err := reqParams.Get("target")
 	if err != nil {
 		return nil, http_api.Err{400, "INVALID_ARG_TARGET"}
 	}
-
+	
 	params := url.Values{}
 	params.Set("from", fmt.Sprintf("-%dsec", s.nsqadmin.getOpts().StatsdInterval*2/time.Second))
 	params.Set("until", fmt.Sprintf("-%dsec", s.nsqadmin.getOpts().StatsdInterval/time.Second))
@@ -713,9 +713,9 @@ func (s *httpServer) graphiteHandler(w http.ResponseWriter, req *http.Request, p
 	params.Set("target", target)
 	query := fmt.Sprintf("/render?%s", params.Encode())
 	url := s.nsqadmin.getOpts().GraphiteURL + query
-
+	
 	s.nsqadmin.logf(LOG_INFO, "GRAPHITE: %s", url)
-
+	
 	var response []struct {
 		Target     string       `json:"target"`
 		DataPoints [][]*float64 `json:"datapoints"`
@@ -725,7 +725,7 @@ func (s *httpServer) graphiteHandler(w http.ResponseWriter, req *http.Request, p
 		s.nsqadmin.logf(LOG_ERROR, "graphite request failed - %s", err)
 		return nil, http_api.Err{500, "INTERNAL_ERROR"}
 	}
-
+	
 	var rateStr string
 	rate := *response[0].DataPoints[0][0]
 	if rate < 0 {
@@ -741,7 +741,7 @@ func (s *httpServer) graphiteHandler(w http.ResponseWriter, req *http.Request, p
 
 func (s *httpServer) doConfig(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	opt := ps.ByName("opt")
-
+	
 	allowConfigFromCIDR := s.nsqadmin.getOpts().AllowConfigFromCIDR
 	if allowConfigFromCIDR != "" {
 		_, ipnet, _ := net.ParseCIDR(allowConfigFromCIDR)
@@ -759,7 +759,7 @@ func (s *httpServer) doConfig(w http.ResponseWriter, req *http.Request, ps httpr
 			return nil, http_api.Err{403, "FORBIDDEN"}
 		}
 	}
-
+	
 	if req.Method == "PUT" {
 		// add 1 so that it's greater than our max when we test for it
 		// (LimitReader returns a "fake" EOF)
@@ -771,11 +771,11 @@ func (s *httpServer) doConfig(w http.ResponseWriter, req *http.Request, ps httpr
 		if int64(len(body)) == readMax || len(body) == 0 {
 			return nil, http_api.Err{413, "INVALID_VALUE"}
 		}
-
+		
 		opts := *s.nsqadmin.getOpts()
 		switch opt {
 		case "nsqlookupd_http_addresses":
-			err := json.Unmarshal(body, &opts.NSQLookupdHTTPAddresses)
+			err := sonic.Unmarshal(body, &opts.NSQLookupdHTTPAddresses)
 			if err != nil {
 				return nil, http_api.Err{400, "INVALID_VALUE"}
 			}
@@ -791,12 +791,12 @@ func (s *httpServer) doConfig(w http.ResponseWriter, req *http.Request, ps httpr
 		}
 		s.nsqadmin.swapOpts(&opts)
 	}
-
+	
 	v, ok := getOptByCfgName(s.nsqadmin.getOpts(), opt)
 	if !ok {
 		return nil, http_api.Err{400, "INVALID_OPTION"}
 	}
-
+	
 	return v, nil
 }
 

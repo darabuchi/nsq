@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
+	
 	"github.com/nsqio/nsq/internal/clusterinfo"
 	"github.com/nsqio/nsq/internal/test"
 	"github.com/nsqio/nsq/internal/version"
@@ -68,7 +68,7 @@ func bootstrapNSQCluster(t *testing.T) (string, []*nsqd.NSQD, []*nsqlookupd.NSQL
 
 func bootstrapNSQClusterWithAuth(t *testing.T, withAuth bool) (string, []*nsqd.NSQD, []*nsqlookupd.NSQLookupd, *NSQAdmin) {
 	lgr := test.NewTestLogger(t)
-
+	
 	nsqlookupdOpts := nsqlookupd.NewOptions()
 	nsqlookupdOpts.TCPAddress = "127.0.0.1:0"
 	nsqlookupdOpts.HTTPAddress = "127.0.0.1:0"
@@ -84,9 +84,9 @@ func bootstrapNSQClusterWithAuth(t *testing.T, withAuth bool) (string, []*nsqd.N
 			panic(err)
 		}
 	}()
-
+	
 	time.Sleep(100 * time.Millisecond)
-
+	
 	nsqdOpts := nsqd.NewOptions()
 	nsqdOpts.TCPAddress = "127.0.0.1:0"
 	nsqdOpts.HTTPAddress = "127.0.0.1:0"
@@ -108,7 +108,7 @@ func bootstrapNSQClusterWithAuth(t *testing.T, withAuth bool) (string, []*nsqd.N
 			panic(err)
 		}
 	}()
-
+	
 	nsqadminOpts := NewOptions()
 	nsqadminOpts.HTTPAddress = "127.0.0.1:0"
 	nsqadminOpts.NSQLookupdHTTPAddresses = []string{nsqlookupd1.RealHTTPAddr().String()}
@@ -126,9 +126,9 @@ func bootstrapNSQClusterWithAuth(t *testing.T, withAuth bool) (string, []*nsqd.N
 			panic(err)
 		}
 	}()
-
+	
 	time.Sleep(100 * time.Millisecond)
-
+	
 	return tmpDir, []*nsqd.NSQD{nsqd1}, []*nsqlookupd.NSQLookupd{nsqlookupd1}, nsqadmin1
 }
 
@@ -138,7 +138,7 @@ func TestPing(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/ping", nsqadmin1.RealHTTPAddr())
 	req, _ := http.NewRequest("GET", url, nil)
@@ -147,7 +147,7 @@ func TestPing(t *testing.T) {
 	test.Equal(t, 200, resp.StatusCode)
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-
+	
 	test.Equal(t, []byte("OK"), body)
 }
 
@@ -157,11 +157,11 @@ func TestHTTPTopicsGET(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_topics_get" + strconv.Itoa(int(time.Now().Unix()))
 	nsqds[0].GetTopic(topicName)
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics", nsqadmin1.RealHTTPAddr())
 	req, _ := http.NewRequest("GET", url, nil)
@@ -170,10 +170,10 @@ func TestHTTPTopicsGET(t *testing.T) {
 	test.Equal(t, 200, resp.StatusCode)
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-
+	
 	t.Logf("%s", body)
 	tr := TopicsDoc{}
-	err = json.Unmarshal(body, &tr)
+	err = sonic.Unmarshal(body, &tr)
 	test.Nil(t, err)
 	test.Equal(t, 1, len(tr.Topics))
 	test.Equal(t, topicName, tr.Topics[0])
@@ -185,11 +185,11 @@ func TestHTTPTopicGET(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_topic_get" + strconv.Itoa(int(time.Now().Unix()))
 	nsqds[0].GetTopic(topicName)
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s", nsqadmin1.RealHTTPAddr(), topicName)
 	req, _ := http.NewRequest("GET", url, nil)
@@ -198,10 +198,10 @@ func TestHTTPTopicGET(t *testing.T) {
 	test.Equal(t, 200, resp.StatusCode)
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-
+	
 	t.Logf("%s", body)
 	ts := TopicStatsDoc{}
-	err = json.Unmarshal(body, &ts)
+	err = sonic.Unmarshal(body, &ts)
 	test.Nil(t, err)
 	test.Equal(t, topicName, ts.TopicName)
 	test.Equal(t, 0, int(ts.Depth))
@@ -217,9 +217,9 @@ func TestHTTPNodesGET(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/nodes", nsqadmin1.RealHTTPAddr())
 	req, _ := http.NewRequest("GET", url, nil)
@@ -228,12 +228,12 @@ func TestHTTPNodesGET(t *testing.T) {
 	test.Equal(t, 200, resp.StatusCode)
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-
+	
 	hostname, _ := os.Hostname()
-
+	
 	t.Logf("%s", body)
 	ns := NodesDoc{}
-	err = json.Unmarshal(body, &ns)
+	err = sonic.Unmarshal(body, &ns)
 	test.Nil(t, err)
 	test.Equal(t, 1, len(ns.Nodes))
 	testNode := ns.Nodes[0]
@@ -251,12 +251,12 @@ func TestHTTPChannelGET(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_channel_get" + strconv.Itoa(int(time.Now().Unix()))
 	topic := nsqds[0].GetTopic(topicName)
 	topic.GetChannel("ch")
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s/ch", nsqadmin1.RealHTTPAddr(), topicName)
 	req, _ := http.NewRequest("GET", url, nil)
@@ -265,10 +265,10 @@ func TestHTTPChannelGET(t *testing.T) {
 	test.Equal(t, 200, resp.StatusCode)
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-
+	
 	t.Logf("%s", body)
 	cs := ChannelStatsDoc{}
-	err = json.Unmarshal(body, &cs)
+	err = sonic.Unmarshal(body, &cs)
 	test.Nil(t, err)
 	test.Equal(t, topicName, cs.TopicName)
 	test.Equal(t, "ch", cs.ChannelName)
@@ -290,12 +290,12 @@ func TestHTTPNodesSingleGET(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_nodes_single_get" + strconv.Itoa(int(time.Now().Unix()))
 	topic := nsqds[0].GetTopic(topicName)
 	topic.GetChannel("ch")
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/nodes/%s", nsqadmin1.RealHTTPAddr(),
 		nsqds[0].RealHTTPAddr().String())
@@ -305,10 +305,10 @@ func TestHTTPNodesSingleGET(t *testing.T) {
 	test.Equal(t, 200, resp.StatusCode)
 	body, _ := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
-
+	
 	t.Logf("%s", body)
 	ns := NodeStatsDoc{}
-	err = json.Unmarshal(body, &ns)
+	err = sonic.Unmarshal(body, &ns)
 	test.Nil(t, err)
 	test.Equal(t, nsqds[0].RealHTTPAddr().String(), ns.Node)
 	test.Equal(t, 1, len(ns.TopicStats))
@@ -327,11 +327,11 @@ func TestHTTPCreateTopicPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	time.Sleep(100 * time.Millisecond)
-
+	
 	topicName := "test_create_topic_post" + strconv.Itoa(int(time.Now().Unix()))
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics", nsqadmin1.RealHTTPAddr())
 	body, _ := json.Marshal(map[string]interface{}{
@@ -350,11 +350,11 @@ func TestHTTPCreateTopicChannelPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	time.Sleep(100 * time.Millisecond)
-
+	
 	topicName := "test_create_topic_channel_post" + strconv.Itoa(int(time.Now().Unix()))
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics", nsqadmin1.RealHTTPAddr())
 	body, _ := json.Marshal(map[string]interface{}{
@@ -374,11 +374,11 @@ func TestHTTPTombstoneTopicNodePOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_tombstone_topic_node_post" + strconv.Itoa(int(time.Now().Unix()))
 	nsqds[0].GetTopic(topicName)
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/nodes/%s", nsqadmin1.RealHTTPAddr(), nsqds[0].RealHTTPAddr())
 	body, _ := json.Marshal(map[string]interface{}{
@@ -397,11 +397,11 @@ func TestHTTPDeleteTopicPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_delete_topic_post" + strconv.Itoa(int(time.Now().Unix()))
 	nsqds[0].GetTopic(topicName)
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s", nsqadmin1.RealHTTPAddr(), topicName)
 	req, _ := http.NewRequest("DELETE", url, nil)
@@ -417,12 +417,12 @@ func TestHTTPDeleteChannelPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_delete_channel_post" + strconv.Itoa(int(time.Now().Unix()))
 	topic := nsqds[0].GetTopic(topicName)
 	topic.GetChannel("ch")
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s/ch", nsqadmin1.RealHTTPAddr(), topicName)
 	req, _ := http.NewRequest("DELETE", url, nil)
@@ -438,11 +438,11 @@ func TestHTTPPauseTopicPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_pause_topic_post" + strconv.Itoa(int(time.Now().Unix()))
 	nsqds[0].GetTopic(topicName)
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s", nsqadmin1.RealHTTPAddr(), topicName)
 	body, _ := json.Marshal(map[string]interface{}{
@@ -454,7 +454,7 @@ func TestHTTPPauseTopicPOST(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	test.Equal(t, 200, resp.StatusCode)
 	resp.Body.Close()
-
+	
 	url = fmt.Sprintf("http://%s/api/topics/%s", nsqadmin1.RealHTTPAddr(), topicName)
 	body, _ = json.Marshal(map[string]interface{}{
 		"action": "unpause",
@@ -472,12 +472,12 @@ func TestHTTPPauseChannelPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_pause_channel_post" + strconv.Itoa(int(time.Now().Unix()))
 	topic := nsqds[0].GetTopic(topicName)
 	topic.GetChannel("ch")
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s/ch", nsqadmin1.RealHTTPAddr(), topicName)
 	body, _ := json.Marshal(map[string]interface{}{
@@ -489,7 +489,7 @@ func TestHTTPPauseChannelPOST(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	test.Equal(t, 200, resp.StatusCode)
 	resp.Body.Close()
-
+	
 	url = fmt.Sprintf("http://%s/api/topics/%s/ch", nsqadmin1.RealHTTPAddr(), topicName)
 	body, _ = json.Marshal(map[string]interface{}{
 		"action": "unpause",
@@ -507,13 +507,13 @@ func TestHTTPEmptyTopicPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_empty_topic_post" + strconv.Itoa(int(time.Now().Unix()))
 	topic := nsqds[0].GetTopic(topicName)
 	topic.PutMessage(nsqd.NewMessage(nsqd.MessageID{}, []byte("1234")))
 	test.Equal(t, int64(1), topic.Depth())
 	time.Sleep(100 * time.Millisecond)
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s", nsqadmin1.RealHTTPAddr(), topicName)
 	body, _ := json.Marshal(map[string]interface{}{
@@ -525,7 +525,7 @@ func TestHTTPEmptyTopicPOST(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	test.Equal(t, 200, resp.StatusCode)
 	resp.Body.Close()
-
+	
 	test.Equal(t, int64(0), topic.Depth())
 }
 
@@ -535,15 +535,15 @@ func TestHTTPEmptyChannelPOST(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	topicName := "test_empty_channel_post" + strconv.Itoa(int(time.Now().Unix()))
 	topic := nsqds[0].GetTopic(topicName)
 	channel := topic.GetChannel("ch")
 	channel.PutMessage(nsqd.NewMessage(nsqd.MessageID{}, []byte("1234")))
-
+	
 	time.Sleep(100 * time.Millisecond)
 	test.Equal(t, int64(1), channel.Depth())
-
+	
 	client := http.Client{}
 	url := fmt.Sprintf("http://%s/api/topics/%s/ch", nsqadmin1.RealHTTPAddr(), topicName)
 	body, _ := json.Marshal(map[string]interface{}{
@@ -555,7 +555,7 @@ func TestHTTPEmptyChannelPOST(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	test.Equal(t, 200, resp.StatusCode)
 	resp.Body.Close()
-
+	
 	test.Equal(t, int64(0), channel.Depth())
 }
 
@@ -565,17 +565,17 @@ func TestHTTPconfig(t *testing.T) {
 	defer nsqds[0].Exit()
 	defer nsqlookupds[0].Exit()
 	defer nsqadmin1.Exit()
-
+	
 	lopts := nsqlookupd.NewOptions()
 	lopts.Logger = test.NewTestLogger(t)
-
+	
 	lopts1 := *lopts
 	_, _, lookupd1 := mustStartNSQLookupd(&lopts1)
 	defer lookupd1.Exit()
 	lopts2 := *lopts
 	_, _, lookupd2 := mustStartNSQLookupd(&lopts2)
 	defer lookupd2.Exit()
-
+	
 	url := fmt.Sprintf("http://%s/config/nsqlookupd_http_addresses", nsqadmin1.RealHTTPAddr())
 	resp, err := http.Get(url)
 	test.Nil(t, err)
@@ -584,7 +584,7 @@ func TestHTTPconfig(t *testing.T) {
 	test.Equal(t, 200, resp.StatusCode)
 	origaddrs := fmt.Sprintf(`["%s"]`, nsqlookupds[0].RealHTTPAddr().String())
 	test.Equal(t, origaddrs, string(body))
-
+	
 	client := http.Client{}
 	addrs := fmt.Sprintf(`["%s","%s"]`, lookupd1.RealHTTPAddr().String(), lookupd2.RealHTTPAddr().String())
 	url = fmt.Sprintf("http://%s/config/nsqlookupd_http_addresses", nsqadmin1.RealHTTPAddr())
@@ -596,7 +596,7 @@ func TestHTTPconfig(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	test.Equal(t, 200, resp.StatusCode)
 	test.Equal(t, addrs, string(body))
-
+	
 	url = fmt.Sprintf("http://%s/config/log_level", nsqadmin1.RealHTTPAddr())
 	req, err = http.NewRequest("PUT", url, bytes.NewBuffer([]byte(`fatal`)))
 	test.Nil(t, err)
@@ -606,7 +606,7 @@ func TestHTTPconfig(t *testing.T) {
 	body, _ = ioutil.ReadAll(resp.Body)
 	test.Equal(t, 200, resp.StatusCode)
 	test.Equal(t, LOG_FATAL, nsqadmin1.getOpts().LogLevel)
-
+	
 	url = fmt.Sprintf("http://%s/config/log_level", nsqadmin1.RealHTTPAddr())
 	req, err = http.NewRequest("PUT", url, bytes.NewBuffer([]byte(`bad`)))
 	test.Nil(t, err)
@@ -632,9 +632,9 @@ func TestHTTPconfigCIDR(t *testing.T) {
 		}
 	}()
 	defer nsqadmin.Exit()
-
+	
 	time.Sleep(100 * time.Millisecond)
-
+	
 	url := fmt.Sprintf("http://%s/config/nsqlookupd_http_addresses", nsqadmin.RealHTTPAddr())
 	resp, err := http.Get(url)
 	test.Nil(t, err)

@@ -3,7 +3,6 @@ package nsqd
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -16,7 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
+	
+	"github.com/bytedance/sonic"
 	"github.com/julienschmidt/httprouter"
 	"github.com/nsqio/nsq/internal/http_api"
 	"github.com/nsqio/nsq/internal/lg"
@@ -40,7 +40,7 @@ type httpServer struct {
 
 func newHTTPServer(nsqd *NSQD, tlsEnabled bool, tlsRequired bool) *httpServer {
 	log := http_api.Log(nsqd.logf)
-
+	
 	router := httprouter.New()
 	router.HandleMethodNotAllowed = true
 	router.PanicHandler = http_api.LogPanicHandler(nsqd.logf)
@@ -52,15 +52,15 @@ func newHTTPServer(nsqd *NSQD, tlsEnabled bool, tlsRequired bool) *httpServer {
 		tlsRequired: tlsRequired,
 		router:      router,
 	}
-
+	
 	router.Handle("GET", "/ping", http_api.Decorate(s.pingHandler, log, http_api.PlainText))
 	router.Handle("GET", "/info", http_api.Decorate(s.doInfo, log, http_api.V1))
-
+	
 	// v1 negotiate
 	router.Handle("POST", "/pub", http_api.Decorate(s.doPUB, http_api.V1))
 	router.Handle("POST", "/mpub", http_api.Decorate(s.doMPUB, http_api.V1))
 	router.Handle("GET", "/stats", http_api.Decorate(s.doStats, log, http_api.V1))
-
+	
 	// only v1
 	router.Handle("POST", "/topic/create", http_api.Decorate(s.doCreateTopic, log, http_api.V1))
 	router.Handle("POST", "/topic/delete", http_api.Decorate(s.doDeleteTopic, log, http_api.V1))
@@ -74,7 +74,7 @@ func newHTTPServer(nsqd *NSQD, tlsEnabled bool, tlsRequired bool) *httpServer {
 	router.Handle("POST", "/channel/unpause", http_api.Decorate(s.doPauseChannel, log, http_api.V1))
 	router.Handle("GET", "/config/:opt", http_api.Decorate(s.doConfig, log, http_api.V1))
 	router.Handle("PUT", "/config/:opt", http_api.Decorate(s.doConfig, log, http_api.V1))
-
+	
 	// debug
 	router.HandlerFunc("GET", "/debug/pprof/", pprof.Index)
 	router.HandlerFunc("GET", "/debug/pprof/cmdline", pprof.Cmdline)
@@ -86,7 +86,7 @@ func newHTTPServer(nsqd *NSQD, tlsEnabled bool, tlsRequired bool) *httpServer {
 	router.Handler("GET", "/debug/pprof/block", pprof.Handler("block"))
 	router.Handle("PUT", "/debug/setblockrate", http_api.Decorate(setBlockRateHandler, log, http_api.PlainText))
 	router.Handler("GET", "/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
-
+	
 	return s
 }
 
@@ -156,17 +156,17 @@ func (s *httpServer) getExistingTopicFromQuery(req *http.Request) (*http_api.Req
 		s.nsqd.logf(LOG_ERROR, "failed to parse request params - %s", err)
 		return nil, nil, "", http_api.Err{400, "INVALID_REQUEST"}
 	}
-
+	
 	topicName, channelName, err := http_api.GetTopicChannelArgs(reqParams)
 	if err != nil {
 		return nil, nil, "", http_api.Err{400, err.Error()}
 	}
-
+	
 	topic, err := s.nsqd.GetExistingTopic(topicName)
 	if err != nil {
 		return nil, nil, "", http_api.Err{404, "TOPIC_NOT_FOUND"}
 	}
-
+	
 	return reqParams, topic, channelName, err
 }
 
@@ -176,28 +176,28 @@ func (s *httpServer) getTopicFromQuery(req *http.Request) (url.Values, *Topic, e
 		s.nsqd.logf(LOG_ERROR, "failed to parse request params - %s", err)
 		return nil, nil, http_api.Err{400, "INVALID_REQUEST"}
 	}
-
+	
 	topicNames, ok := reqParams["topic"]
 	if !ok {
 		return nil, nil, http_api.Err{400, "MISSING_ARG_TOPIC"}
 	}
 	topicName := topicNames[0]
-
+	
 	if !protocol.IsValidTopicName(topicName) {
 		return nil, nil, http_api.Err{400, "INVALID_TOPIC"}
 	}
-
+	
 	return reqParams, s.nsqd.GetTopic(topicName), nil
 }
 
 func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	// TODO: one day I'd really like to just error on chunked requests
 	// to be able to fail "too big" requests before we even read
-
+	
 	if req.ContentLength > s.nsqd.getOpts().MaxMsgSize {
 		return nil, http_api.Err{413, "MSG_TOO_BIG"}
 	}
-
+	
 	// add 1 so that it's greater than our max when we test for it
 	// (LimitReader returns a "fake" EOF)
 	readMax := s.nsqd.getOpts().MaxMsgSize + 1
@@ -211,12 +211,12 @@ func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprout
 	if len(body) == 0 {
 		return nil, http_api.Err{400, "MSG_EMPTY"}
 	}
-
+	
 	reqParams, topic, err := s.getTopicFromQuery(req)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	var deferred time.Duration
 	if ds, ok := reqParams["defer"]; ok {
 		var di int64
@@ -229,33 +229,33 @@ func (s *httpServer) doPUB(w http.ResponseWriter, req *http.Request, ps httprout
 			return nil, http_api.Err{400, "INVALID_DEFER"}
 		}
 	}
-
+	
 	msg := NewMessage(topic.GenerateID(), body)
 	msg.deferred = deferred
 	err = topic.PutMessage(msg)
 	if err != nil {
 		return nil, http_api.Err{503, "EXITING"}
 	}
-
+	
 	return "OK", nil
 }
 
 func (s *httpServer) doMPUB(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	var msgs []*Message
 	var exit bool
-
+	
 	// TODO: one day I'd really like to just error on chunked requests
 	// to be able to fail "too big" requests before we even read
-
+	
 	if req.ContentLength > s.nsqd.getOpts().MaxBodySize {
 		return nil, http_api.Err{413, "BODY_TOO_BIG"}
 	}
-
+	
 	reqParams, topic, err := s.getTopicFromQuery(req)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	// text mode is default, but unrecognized binary opt considered true
 	binaryMode := false
 	if vals, ok := reqParams["binary"]; ok {
@@ -290,31 +290,31 @@ func (s *httpServer) doMPUB(w http.ResponseWriter, req *http.Request, ps httprou
 			if int64(total) == readMax {
 				return nil, http_api.Err{413, "BODY_TOO_BIG"}
 			}
-
+			
 			if len(block) > 0 && block[len(block)-1] == '\n' {
 				block = block[:len(block)-1]
 			}
-
+			
 			// silently discard 0 length messages
 			// this maintains the behavior pre 0.2.22
 			if len(block) == 0 {
 				continue
 			}
-
+			
 			if int64(len(block)) > s.nsqd.getOpts().MaxMsgSize {
 				return nil, http_api.Err{413, "MSG_TOO_BIG"}
 			}
-
+			
 			msg := NewMessage(topic.GenerateID(), block)
 			msgs = append(msgs, msg)
 		}
 	}
-
+	
 	err = topic.PutMessages(msgs)
 	if err != nil {
 		return nil, http_api.Err{503, "EXITING"}
 	}
-
+	
 	return "OK", nil
 }
 
@@ -329,26 +329,26 @@ func (s *httpServer) doEmptyTopic(w http.ResponseWriter, req *http.Request, ps h
 		s.nsqd.logf(LOG_ERROR, "failed to parse request params - %s", err)
 		return nil, http_api.Err{400, "INVALID_REQUEST"}
 	}
-
+	
 	topicName, err := reqParams.Get("topic")
 	if err != nil {
 		return nil, http_api.Err{400, "MISSING_ARG_TOPIC"}
 	}
-
+	
 	if !protocol.IsValidTopicName(topicName) {
 		return nil, http_api.Err{400, "INVALID_TOPIC"}
 	}
-
+	
 	topic, err := s.nsqd.GetExistingTopic(topicName)
 	if err != nil {
 		return nil, http_api.Err{404, "TOPIC_NOT_FOUND"}
 	}
-
+	
 	err = topic.Empty()
 	if err != nil {
 		return nil, http_api.Err{500, "INTERNAL_ERROR"}
 	}
-
+	
 	return nil, nil
 }
 
@@ -358,17 +358,17 @@ func (s *httpServer) doDeleteTopic(w http.ResponseWriter, req *http.Request, ps 
 		s.nsqd.logf(LOG_ERROR, "failed to parse request params - %s", err)
 		return nil, http_api.Err{400, "INVALID_REQUEST"}
 	}
-
+	
 	topicName, err := reqParams.Get("topic")
 	if err != nil {
 		return nil, http_api.Err{400, "MISSING_ARG_TOPIC"}
 	}
-
+	
 	err = s.nsqd.DeleteExistingTopic(topicName)
 	if err != nil {
 		return nil, http_api.Err{404, "TOPIC_NOT_FOUND"}
 	}
-
+	
 	return nil, nil
 }
 
@@ -378,17 +378,17 @@ func (s *httpServer) doPauseTopic(w http.ResponseWriter, req *http.Request, ps h
 		s.nsqd.logf(LOG_ERROR, "failed to parse request params - %s", err)
 		return nil, http_api.Err{400, "INVALID_REQUEST"}
 	}
-
+	
 	topicName, err := reqParams.Get("topic")
 	if err != nil {
 		return nil, http_api.Err{400, "MISSING_ARG_TOPIC"}
 	}
-
+	
 	topic, err := s.nsqd.GetExistingTopic(topicName)
 	if err != nil {
 		return nil, http_api.Err{404, "TOPIC_NOT_FOUND"}
 	}
-
+	
 	if strings.Contains(req.URL.Path, "unpause") {
 		err = topic.UnPause()
 	} else {
@@ -398,7 +398,7 @@ func (s *httpServer) doPauseTopic(w http.ResponseWriter, req *http.Request, ps h
 		s.nsqd.logf(LOG_ERROR, "failure in %s - %s", req.URL.Path, err)
 		return nil, http_api.Err{500, "INTERNAL_ERROR"}
 	}
-
+	
 	// pro-actively persist metadata so in case of process failure
 	// nsqd won't suddenly (un)pause a topic
 	s.nsqd.Lock()
@@ -421,17 +421,17 @@ func (s *httpServer) doEmptyChannel(w http.ResponseWriter, req *http.Request, ps
 	if err != nil {
 		return nil, err
 	}
-
+	
 	channel, err := topic.GetExistingChannel(channelName)
 	if err != nil {
 		return nil, http_api.Err{404, "CHANNEL_NOT_FOUND"}
 	}
-
+	
 	err = channel.Empty()
 	if err != nil {
 		return nil, http_api.Err{500, "INTERNAL_ERROR"}
 	}
-
+	
 	return nil, nil
 }
 
@@ -440,12 +440,12 @@ func (s *httpServer) doDeleteChannel(w http.ResponseWriter, req *http.Request, p
 	if err != nil {
 		return nil, err
 	}
-
+	
 	err = topic.DeleteExistingChannel(channelName)
 	if err != nil {
 		return nil, http_api.Err{404, "CHANNEL_NOT_FOUND"}
 	}
-
+	
 	return nil, nil
 }
 
@@ -454,12 +454,12 @@ func (s *httpServer) doPauseChannel(w http.ResponseWriter, req *http.Request, ps
 	if err != nil {
 		return nil, err
 	}
-
+	
 	channel, err := topic.GetExistingChannel(channelName)
 	if err != nil {
 		return nil, http_api.Err{404, "CHANNEL_NOT_FOUND"}
 	}
-
+	
 	if strings.Contains(req.URL.Path, "unpause") {
 		err = channel.UnPause()
 	} else {
@@ -469,7 +469,7 @@ func (s *httpServer) doPauseChannel(w http.ResponseWriter, req *http.Request, ps
 		s.nsqd.logf(LOG_ERROR, "failure in %s - %s", req.URL.Path, err)
 		return nil, http_api.Err{500, "INTERNAL_ERROR"}
 	}
-
+	
 	// pro-actively persist metadata so in case of process failure
 	// nsqd won't suddenly (un)pause a channel
 	s.nsqd.Lock()
@@ -490,7 +490,7 @@ func (s *httpServer) doStats(w http.ResponseWriter, req *http.Request, ps httpro
 	includeClientsParam, _ := reqParams.Get("include_clients")
 	includeMemParam, _ := reqParams.Get("include_mem")
 	jsonFormat := formatString == "json"
-
+	
 	includeClients, ok := boolParams[includeClientsParam]
 	if !ok {
 		includeClients = true
@@ -499,12 +499,12 @@ func (s *httpServer) doStats(w http.ResponseWriter, req *http.Request, ps httpro
 	if !ok {
 		includeMem = true
 	}
-
+	
 	stats := s.nsqd.GetStats(topicName, channelName, includeClients)
 	health := s.nsqd.GetHealth()
 	startTime := s.nsqd.GetStartTime()
 	uptime := time.Since(startTime)
-
+	
 	var ms *memStats
 	if includeMem {
 		m := getMemStats()
@@ -513,7 +513,7 @@ func (s *httpServer) doStats(w http.ResponseWriter, req *http.Request, ps httpro
 	if !jsonFormat {
 		return s.printStats(stats, ms, health, startTime, uptime), nil
 	}
-
+	
 	// TODO: should producer stats be hung off topics?
 	return struct {
 		Version   string        `json:"version"`
@@ -528,13 +528,13 @@ func (s *httpServer) doStats(w http.ResponseWriter, req *http.Request, ps httpro
 func (s *httpServer) printStats(stats Stats, ms *memStats, health string, startTime time.Time, uptime time.Duration) []byte {
 	var buf bytes.Buffer
 	w := &buf
-
+	
 	fmt.Fprintf(w, "%s\n", version.String("nsqd"))
 	fmt.Fprintf(w, "start_time %v\n", startTime.Format(time.RFC3339))
 	fmt.Fprintf(w, "uptime %s\n", uptime)
-
+	
 	fmt.Fprintf(w, "\nHealth: %s\n", health)
-
+	
 	if ms != nil {
 		fmt.Fprintf(w, "\nMemory:\n")
 		fmt.Fprintf(w, "   %-25s\t%d\n", "heap_objects", ms.HeapObjects)
@@ -547,13 +547,13 @@ func (s *httpServer) printStats(stats Stats, ms *memStats, health string, startT
 		fmt.Fprintf(w, "   %-25s\t%d\n", "next_gc_bytes", ms.NextGCBytes)
 		fmt.Fprintf(w, "   %-25s\t%d\n", "gc_total_runs", ms.GCTotalRuns)
 	}
-
+	
 	if len(stats.Topics) == 0 {
 		fmt.Fprintf(w, "\nTopics: None\n")
 	} else {
 		fmt.Fprintf(w, "\nTopics:")
 	}
-
+	
 	for _, t := range stats.Topics {
 		var pausedPrefix string
 		if t.Paused {
@@ -592,7 +592,7 @@ func (s *httpServer) printStats(stats Stats, ms *memStats, health string, startT
 			}
 		}
 	}
-
+	
 	if len(stats.Producers) == 0 {
 		fmt.Fprintf(w, "\nProducers: None\n")
 	} else {
@@ -601,13 +601,13 @@ func (s *httpServer) printStats(stats Stats, ms *memStats, health string, startT
 			fmt.Fprintf(w, "   %s\n", client)
 		}
 	}
-
+	
 	return buf.Bytes()
 }
 
 func (s *httpServer) doConfig(w http.ResponseWriter, req *http.Request, ps httprouter.Params) (interface{}, error) {
 	opt := ps.ByName("opt")
-
+	
 	if req.Method == "PUT" {
 		// add 1 so that it's greater than our max when we test for it
 		// (LimitReader returns a "fake" EOF)
@@ -619,11 +619,11 @@ func (s *httpServer) doConfig(w http.ResponseWriter, req *http.Request, ps httpr
 		if int64(len(body)) == readMax || len(body) == 0 {
 			return nil, http_api.Err{413, "INVALID_VALUE"}
 		}
-
+		
 		opts := *s.nsqd.getOpts()
 		switch opt {
 		case "nsqlookupd_tcp_addresses":
-			err := json.Unmarshal(body, &opts.NSQLookupdTCPAddresses)
+			err := sonic.Unmarshal(body, &opts.NSQLookupdTCPAddresses)
 			if err != nil {
 				return nil, http_api.Err{400, "INVALID_VALUE"}
 			}
@@ -640,12 +640,12 @@ func (s *httpServer) doConfig(w http.ResponseWriter, req *http.Request, ps httpr
 		s.nsqd.swapOpts(&opts)
 		s.nsqd.triggerOptsNotification()
 	}
-
+	
 	v, ok := getOptByCfgName(s.nsqd.getOpts(), opt)
 	if !ok {
 		return nil, http_api.Err{400, "INVALID_OPTION"}
 	}
-
+	
 	return v, nil
 }
 

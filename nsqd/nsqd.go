@@ -17,7 +17,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
+	
+	"github.com/bytedance/sonic"
 	"github.com/nsqio/nsq/internal/clusterinfo"
 	"github.com/nsqio/nsq/internal/dirlock"
 	"github.com/nsqio/nsq/internal/http_api"
@@ -40,43 +41,43 @@ type errStore struct {
 type NSQD struct {
 	// 64bit atomic vars need to be first for proper alignment on 32bit platforms
 	clientIDSequence int64
-
+	
 	sync.RWMutex
 	ctx context.Context
 	// ctxCancel cancels a context that main() is waiting on
 	ctxCancel context.CancelFunc
-
+	
 	opts atomic.Value
-
+	
 	dl        *dirlock.DirLock
 	isLoading int32
 	isExiting int32
 	errValue  atomic.Value
 	startTime time.Time
-
+	
 	topicMap map[string]*Topic
-
+	
 	lookupPeers atomic.Value
-
+	
 	tcpServer     *tcpServer
 	tcpListener   net.Listener
 	httpListener  net.Listener
 	httpsListener net.Listener
 	tlsConfig     *tls.Config
-
+	
 	poolSize int
-
+	
 	notifyChan           chan interface{}
 	optsNotificationChan chan struct{}
 	exitChan             chan int
 	waitGroup            util.WaitGroupWrapper
-
+	
 	ci *clusterinfo.ClusterInfo
 }
 
 func New(opts *Options) (*NSQD, error) {
 	var err error
-
+	
 	dataPath := opts.DataPath
 	if opts.DataPath == "" {
 		cwd, _ := os.Getwd()
@@ -85,7 +86,7 @@ func New(opts *Options) (*NSQD, error) {
 	if opts.Logger == nil {
 		opts.Logger = log.New(os.Stderr, opts.LogPrefix, log.Ldate|log.Ltime|log.Lmicroseconds)
 	}
-
+	
 	n := &NSQD{
 		startTime:            time.Now(),
 		topicMap:             make(map[string]*Topic),
@@ -97,29 +98,29 @@ func New(opts *Options) (*NSQD, error) {
 	n.ctx, n.ctxCancel = context.WithCancel(context.Background())
 	httpcli := http_api.NewClient(nil, opts.HTTPClientConnectTimeout, opts.HTTPClientRequestTimeout)
 	n.ci = clusterinfo.New(n.logf, httpcli)
-
+	
 	n.lookupPeers.Store([]*lookupPeer{})
-
+	
 	n.swapOpts(opts)
 	n.errValue.Store(errStore{})
-
+	
 	err = n.dl.Lock()
 	if err != nil {
 		return nil, fmt.Errorf("failed to lock data-path: %v", err)
 	}
-
+	
 	if opts.MaxDeflateLevel < 1 || opts.MaxDeflateLevel > 9 {
 		return nil, errors.New("--max-deflate-level must be [1,9]")
 	}
-
+	
 	if opts.ID < 0 || opts.ID >= 1024 {
 		return nil, errors.New("--node-id must be [0,1024)")
 	}
-
+	
 	if opts.TLSClientAuthPolicy != "" && opts.TLSRequired == TLSNotRequired {
 		opts.TLSRequired = TLSRequired
 	}
-
+	
 	tlsConfig, err := buildTLSConfig(opts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build TLS config - %s", err)
@@ -128,16 +129,16 @@ func New(opts *Options) (*NSQD, error) {
 		return nil, errors.New("cannot require TLS client connections without TLS key and cert")
 	}
 	n.tlsConfig = tlsConfig
-
+	
 	for _, v := range opts.E2EProcessingLatencyPercentiles {
 		if v <= 0 || v > 1 {
 			return nil, fmt.Errorf("invalid E2E processing latency percentile: %v", v)
 		}
 	}
-
+	
 	n.logf(LOG_INFO, version.String("nsqd"))
 	n.logf(LOG_INFO, "ID: %d", opts.ID)
-
+	
 	n.tcpServer = &tcpServer{nsqd: n}
 	n.tcpListener, err = net.Listen("tcp", opts.TCPAddress)
 	if err != nil {
@@ -158,11 +159,11 @@ func New(opts *Options) (*NSQD, error) {
 	if opts.BroadcastHTTPPort == 0 {
 		opts.BroadcastHTTPPort = n.RealHTTPAddr().Port
 	}
-
+	
 	if opts.BroadcastTCPPort == 0 {
 		opts.BroadcastTCPPort = n.RealTCPAddr().Port
 	}
-
+	
 	if opts.StatsdPrefix != "" {
 		var port string = fmt.Sprint(opts.BroadcastHTTPPort)
 		statsdHostKey := statsd.HostKey(net.JoinHostPort(opts.BroadcastAddress, port))
@@ -172,7 +173,7 @@ func New(opts *Options) (*NSQD, error) {
 		}
 		opts.StatsdPrefix = prefixWithHost
 	}
-
+	
 	return n, nil
 }
 
@@ -196,7 +197,7 @@ func (n *NSQD) RealTCPAddr() *net.TCPAddr {
 		return &net.TCPAddr{}
 	}
 	return n.tcpListener.Addr().(*net.TCPAddr)
-
+	
 }
 
 func (n *NSQD) RealHTTPAddr() *net.TCPAddr {
@@ -249,7 +250,7 @@ func (n *NSQD) Main() error {
 			exitCh <- err
 		})
 	}
-
+	
 	n.waitGroup.Wrap(func() {
 		exitFunc(protocol.TCPServer(n.tcpListener, n.tcpServer, n.logf))
 	})
@@ -265,13 +266,13 @@ func (n *NSQD) Main() error {
 			exitFunc(http_api.Serve(n.httpsListener, httpsServer, "HTTPS", n.logf))
 		})
 	}
-
+	
 	n.waitGroup.Wrap(n.queueScanLoop)
 	n.waitGroup.Wrap(n.lookupLoop)
 	if n.getOpts().StatsdAddress != "" {
 		n.waitGroup.Wrap(n.statsdLoop)
 	}
-
+	
 	err := <-exitCh
 	return err
 }
@@ -306,7 +307,7 @@ func writeSyncFile(fn string, data []byte) error {
 	if err != nil {
 		return err
 	}
-
+	
 	_, err = f.Write(data)
 	if err == nil {
 		err = f.Sync()
@@ -318,9 +319,9 @@ func writeSyncFile(fn string, data []byte) error {
 func (n *NSQD) LoadMetadata() error {
 	atomic.StoreInt32(&n.isLoading, 1)
 	defer atomic.StoreInt32(&n.isLoading, 0)
-
+	
 	fn := newMetadataFile(n.getOpts())
-
+	
 	data, err := readOrEmpty(fn)
 	if err != nil {
 		return err
@@ -328,13 +329,13 @@ func (n *NSQD) LoadMetadata() error {
 	if data == nil {
 		return nil // fresh start
 	}
-
+	
 	var m meta
-	err = json.Unmarshal(data, &m)
+	err = sonic.Unmarshal(data, &m)
 	if err != nil {
 		return fmt.Errorf("failed to parse metadata in %s - %s", fn, err)
 	}
-
+	
 	for _, t := range m.Topics {
 		if !protocol.IsValidTopicName(t.Name) {
 			n.logf(LOG_WARN, "skipping creation of invalid topic %s", t.Name)
@@ -362,9 +363,9 @@ func (n *NSQD) LoadMetadata() error {
 func (n *NSQD) PersistMetadata() error {
 	// persist metadata about what topics/channels we have, across restarts
 	fileName := newMetadataFile(n.getOpts())
-
+	
 	n.logf(LOG_INFO, "NSQ: persisting topic/channel metadata to %s", fileName)
-
+	
 	js := make(map[string]interface{})
 	topics := []interface{}{}
 	for _, topic := range n.topicMap {
@@ -393,14 +394,14 @@ func (n *NSQD) PersistMetadata() error {
 	}
 	js["version"] = version.Binary
 	js["topics"] = topics
-
+	
 	data, err := json.Marshal(&js)
 	if err != nil {
 		return err
 	}
-
+	
 	tmpFileName := fmt.Sprintf("%s.%d.tmp", fileName, rand.Int())
-
+	
 	err = writeSyncFile(tmpFileName, data)
 	if err != nil {
 		return err
@@ -410,7 +411,7 @@ func (n *NSQD) PersistMetadata() error {
 		return err
 	}
 	// technically should fsync DataPath here
-
+	
 	return nil
 }
 
@@ -422,19 +423,19 @@ func (n *NSQD) Exit() {
 	if n.tcpListener != nil {
 		n.tcpListener.Close()
 	}
-
+	
 	if n.tcpServer != nil {
 		n.tcpServer.Close()
 	}
-
+	
 	if n.httpListener != nil {
 		n.httpListener.Close()
 	}
-
+	
 	if n.httpsListener != nil {
 		n.httpsListener.Close()
 	}
-
+	
 	n.Lock()
 	err := n.PersistMetadata()
 	if err != nil {
@@ -445,7 +446,7 @@ func (n *NSQD) Exit() {
 		topic.Close()
 	}
 	n.Unlock()
-
+	
 	n.logf(LOG_INFO, "NSQ: stopping subsystems")
 	close(n.exitChan)
 	n.waitGroup.Wait()
@@ -464,9 +465,9 @@ func (n *NSQD) GetTopic(topicName string) *Topic {
 	if ok {
 		return t
 	}
-
+	
 	n.Lock()
-
+	
 	t, ok = n.topicMap[topicName]
 	if ok {
 		n.Unlock()
@@ -477,18 +478,18 @@ func (n *NSQD) GetTopic(topicName string) *Topic {
 	}
 	t = NewTopic(topicName, n, deleteCallback)
 	n.topicMap[topicName] = t
-
+	
 	n.Unlock()
-
+	
 	n.logf(LOG_INFO, "TOPIC(%s): created", t.name)
 	// topic is created but messagePump not yet started
-
+	
 	// if this topic was created while loading metadata at startup don't do any further initialization
 	// (topic will be "started" after loading completes)
 	if atomic.LoadInt32(&n.isLoading) == 1 {
 		return t
 	}
-
+	
 	// if using lookupd, make a blocking call to get channels and immediately create them
 	// to ensure that all channels receive published messages
 	lookupdHTTPAddrs := n.lookupdHTTPAddrs()
@@ -506,7 +507,7 @@ func (n *NSQD) GetTopic(topicName string) *Topic {
 	} else if len(n.getOpts().NSQLookupdTCPAddresses) > 0 {
 		n.logf(LOG_ERROR, "no available nsqlookupd to query for channels to pre-create for topic %s", t.name)
 	}
-
+	
 	// now that all channels are added, start topic messagePump
 	t.Start()
 	return t
@@ -532,7 +533,7 @@ func (n *NSQD) DeleteExistingTopic(topicName string) error {
 		return errors.New("topic does not exist")
 	}
 	n.RUnlock()
-
+	
 	// delete empties all channels and the topic itself before closing
 	// (so that we dont leave any messages around)
 	//
@@ -540,11 +541,11 @@ func (n *NSQD) DeleteExistingTopic(topicName string) error {
 	// so that any incoming writes will error and not create a new topic
 	// to enforce ordering
 	topic.Delete()
-
+	
 	n.Lock()
 	delete(n.topicMap, topicName)
 	n.Unlock()
-
+	
 	return nil
 }
 
@@ -653,13 +654,13 @@ func (n *NSQD) queueScanLoop() {
 	workCh := make(chan *Channel, n.getOpts().QueueScanSelectionCount)
 	responseCh := make(chan bool, n.getOpts().QueueScanSelectionCount)
 	closeCh := make(chan int)
-
+	
 	workTicker := time.NewTicker(n.getOpts().QueueScanInterval)
 	refreshTicker := time.NewTicker(n.getOpts().QueueScanRefreshInterval)
-
+	
 	channels := n.channels()
 	n.resizePool(len(channels), workCh, responseCh, closeCh)
-
+	
 	for {
 		select {
 		case <-workTicker.C:
@@ -673,24 +674,24 @@ func (n *NSQD) queueScanLoop() {
 		case <-n.exitChan:
 			goto exit
 		}
-
+		
 		num := n.getOpts().QueueScanSelectionCount
 		if num > len(channels) {
 			num = len(channels)
 		}
-
+	
 	loop:
 		for _, i := range util.UniqRands(num, len(channels)) {
 			workCh <- channels[i]
 		}
-
+		
 		numDirty := 0
 		for i := 0; i < num; i++ {
 			if <-responseCh {
 				numDirty++
 			}
 		}
-
+		
 		if float64(numDirty)/float64(num) > n.getOpts().QueueScanDirtyPercent {
 			goto loop
 		}
@@ -705,13 +706,13 @@ exit:
 
 func buildTLSConfig(opts *Options) (*tls.Config, error) {
 	var tlsConfig *tls.Config
-
+	
 	if opts.TLSCert == "" && opts.TLSKey == "" {
 		return nil, nil
 	}
-
+	
 	tlsClientAuthPolicy := tls.VerifyClientCertIfGiven
-
+	
 	cert, err := tls.LoadX509KeyPair(opts.TLSCert, opts.TLSKey)
 	if err != nil {
 		return nil, err
@@ -724,13 +725,13 @@ func buildTLSConfig(opts *Options) (*tls.Config, error) {
 	default:
 		tlsClientAuthPolicy = tls.NoClientCert
 	}
-
+	
 	tlsConfig = &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		ClientAuth:   tlsClientAuthPolicy,
 		MinVersion:   opts.TLSMinVersion,
 	}
-
+	
 	if opts.TLSRootCAFile != "" {
 		tlsCertPool := x509.NewCertPool()
 		caCertFile, err := ioutil.ReadFile(opts.TLSRootCAFile)
@@ -742,9 +743,9 @@ func buildTLSConfig(opts *Options) (*tls.Config, error) {
 		}
 		tlsConfig.ClientCAs = tlsCertPool
 	}
-
+	
 	tlsConfig.BuildNameToCertificate()
-
+	
 	return tlsConfig, nil
 }
 
@@ -764,6 +765,6 @@ func (n *NSQD) CloneTopic() map[string]*Topic {
 		topicMap[k] = v
 	}
 	n.RUnlock()
-
+	
 	return topicMap
 }

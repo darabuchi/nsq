@@ -2,12 +2,12 @@ package nsqd
 
 import (
 	"bytes"
-	"encoding/json"
 	"net"
 	"os"
 	"strconv"
 	"time"
-
+	
+	"github.com/bytedance/sonic"
 	"github.com/nsqio/go-nsq"
 	"github.com/nsqio/nsq/internal/version"
 )
@@ -20,7 +20,7 @@ func connectCallback(n *NSQD, hostname string) func(*lookupPeer) {
 		ci["http_port"] = n.getOpts().BroadcastHTTPPort
 		ci["hostname"] = hostname
 		ci["broadcast_address"] = n.getOpts().BroadcastAddress
-
+		
 		cmd, err := nsq.Identify(ci)
 		if err != nil {
 			lp.Close()
@@ -35,7 +35,7 @@ func connectCallback(n *NSQD, hostname string) func(*lookupPeer) {
 			lp.Close()
 			return
 		} else {
-			err = json.Unmarshal(resp, &lp.Info)
+			err = sonic.Unmarshal(resp, &lp.Info)
 			if err != nil {
 				n.logf(LOG_ERROR, "LOOKUPD(%s): parsing response - %s", lp, resp)
 				lp.Close()
@@ -47,7 +47,7 @@ func connectCallback(n *NSQD, hostname string) func(*lookupPeer) {
 				}
 			}
 		}
-
+		
 		// build all the commands first so we exit the lock(s) as fast as possible
 		var commands []*nsq.Command
 		n.RLock()
@@ -63,7 +63,7 @@ func connectCallback(n *NSQD, hostname string) func(*lookupPeer) {
 			topic.RUnlock()
 		}
 		n.RUnlock()
-
+		
 		for _, cmd := range commands {
 			n.logf(LOG_INFO, "LOOKUPD(%s): %s", lp, cmd)
 			_, err := lp.Command(cmd)
@@ -79,13 +79,13 @@ func (n *NSQD) lookupLoop() {
 	var lookupPeers []*lookupPeer
 	var lookupAddrs []string
 	connect := true
-
+	
 	hostname, err := os.Hostname()
 	if err != nil {
 		n.logf(LOG_FATAL, "failed to get hostname - %s", err)
 		os.Exit(1)
 	}
-
+	
 	// for announcements, lookupd determines the host automatically
 	ticker := time.Tick(15 * time.Second)
 	for {
@@ -104,7 +104,7 @@ func (n *NSQD) lookupLoop() {
 			n.lookupPeers.Store(lookupPeers)
 			connect = false
 		}
-
+		
 		select {
 		case <-ticker:
 			// send a heartbeat and read a response (read detects closed conns)
@@ -119,7 +119,7 @@ func (n *NSQD) lookupLoop() {
 		case val := <-n.notifyChan:
 			var cmd *nsq.Command
 			var branch string
-
+			
 			switch val.(type) {
 			case *Channel:
 				// notify all nsqlookupds that a new channel exists, or that it's removed
@@ -140,7 +140,7 @@ func (n *NSQD) lookupLoop() {
 					cmd = nsq.Register(topic.name, "")
 				}
 			}
-
+			
 			for _, lookupPeer := range lookupPeers {
 				n.logf(LOG_INFO, "LOOKUPD(%s): %s %s", lookupPeer, branch, cmd)
 				_, err := lookupPeer.Command(cmd)

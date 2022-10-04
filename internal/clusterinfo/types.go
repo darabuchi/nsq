@@ -1,13 +1,13 @@
 package clusterinfo
 
 import (
-	"encoding/json"
 	"net"
 	"sort"
 	"strconv"
 	"time"
-
+	
 	"github.com/blang/semver"
+	"github.com/bytedance/sonic"
 	"github.com/nsqio/nsq/internal/quantile"
 )
 
@@ -35,7 +35,7 @@ type Producer struct {
 	OutOfDate        bool           `json:"out_of_date"`
 }
 
-// UnmarshalJSON implements json.Unmarshaler and postprocesses of ProducerTopics and VersionObj
+// UnmarshalJSON implements sonic.Unmarshaler and postprocesses of ProducerTopics and VersionObj
 func (p *Producer) UnmarshalJSON(b []byte) error {
 	var r struct {
 		RemoteAddress    string   `json:"remote_address"`
@@ -47,7 +47,7 @@ func (p *Producer) UnmarshalJSON(b []byte) error {
 		Topics           []string `json:"topics"`
 		Tombstoned       []bool   `json:"tombstones"`
 	}
-	if err := json.Unmarshal(b, &r); err != nil {
+	if err := sonic.Unmarshal(b, &r); err != nil {
 		return err
 	}
 	*p = Producer{
@@ -102,7 +102,7 @@ type TopicStats struct {
 	NodeStats    []*TopicStats   `json:"nodes"`
 	Channels     []*ChannelStats `json:"channels"`
 	Paused       bool            `json:"paused"`
-
+	
 	E2eProcessingLatency *quantile.E2eProcessingLatencyAggregate `json:"e2e_processing_latency"`
 }
 
@@ -156,7 +156,7 @@ type ChannelStats struct {
 	NodeStats     []*ChannelStats `json:"nodes"`
 	Clients       []*ClientStats  `json:"clients"`
 	Paused        bool            `json:"paused"`
-
+	
 	E2eProcessingLatency *quantile.E2eProcessingLatencyAggregate `json:"e2e_processing_latency"`
 }
 
@@ -208,7 +208,7 @@ type ClientStats struct {
 	Authed            bool          `json:"authed"`
 	AuthIdentity      string        `json:"auth_identity"`
 	AuthIdentityURL   string        `json:"auth_identity_url"`
-
+	
 	TLS                           bool   `json:"tls"`
 	CipherSuite                   string `json:"tls_cipher_suite"`
 	TLSVersion                    string `json:"tls_version"`
@@ -216,11 +216,11 @@ type ClientStats struct {
 	TLSNegotiatedProtocolIsMutual bool   `json:"tls_negotiated_protocol_is_mutual"`
 }
 
-// UnmarshalJSON implements json.Unmarshaler and postprocesses ConnectedDuration
+// UnmarshalJSON implements sonic.Unmarshaler and postprocesses ConnectedDuration
 func (s *ClientStats) UnmarshalJSON(b []byte) error {
-	type locaClientStats ClientStats // re-typed to prevent recursion from json.Unmarshal
+	type locaClientStats ClientStats // re-typed to prevent recursion from sonic.Unmarshal
 	var ss locaClientStats
-	if err := json.Unmarshal(b, &ss); err != nil {
+	if err := sonic.Unmarshal(b, &ss); err != nil {
 		return err
 	}
 	*s = ClientStats(ss)

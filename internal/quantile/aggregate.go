@@ -1,9 +1,10 @@
 package quantile
 
 import (
-	"encoding/json"
 	"math"
 	"sort"
+	
+	"github.com/bytedance/sonic"
 )
 
 type E2eProcessingLatencyAggregate struct {
@@ -22,24 +23,24 @@ func (e *E2eProcessingLatencyAggregate) UnmarshalJSON(b []byte) error {
 		Channel     string               `json:"channel"`
 		Addr        string               `json:"host"`
 	}
-	err := json.Unmarshal(b, &resp)
+	err := sonic.Unmarshal(b, &resp)
 	if err != nil {
 		return err
 	}
-
+	
 	for _, p := range resp.Percentiles {
 		p["min"] = p["value"]
 		p["max"] = p["value"]
 		p["average"] = p["value"]
 		p["count"] = float64(resp.Count)
 	}
-
+	
 	e.Count = resp.Count
 	e.Percentiles = resp.Percentiles
 	e.Topic = resp.Topic
 	e.Channel = resp.Channel
 	e.Addr = resp.Addr
-
+	
 	return nil
 }
 
