@@ -575,6 +575,25 @@ func (c *Channel) ReadMessage() *Message {
 	}
 }
 
+func (c *Channel) ReadMessageWithTimeout(timeout time.Duration) *Message {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		select {
+		case body := <-c.memoryMsgChan:
+			return body
+		case body := <-c.backend.ReadChan():
+			msg, err := decodeMessage(body)
+			if err != nil {
+				continue
+			}
+			return msg
+		case <-timer.C:
+			return nil
+		}
+	}
+}
+
 func (c *Channel) processDeferredQueue(t int64) bool {
 	c.exitMutex.RLock()
 	defer c.exitMutex.RUnlock()
